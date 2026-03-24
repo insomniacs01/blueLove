@@ -1,0 +1,10 @@
+node_modules/
+dist/
+output/
+analysis_frames/
+
+.DS_Store
+npm-debug.log*
+
+65_1774020156.mp4
+MEMORY.md
