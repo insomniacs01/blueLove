@@ -11,6 +11,7 @@ import { createBackdrop } from './scene/createBackdrop.js';
 import { createEnergyBase } from './scene/createEnergyBase.js';
 import { createFractureVeil } from './scene/createFractureVeil.js';
 import { createFlowRibbons } from './scene/createFlowRibbons.js';
+import { createGlyphFireworks } from './scene/createGlyphFireworks.js';
 import { createHeartParticles } from './scene/createHeartParticles.js';
 import { createHeartStarfield } from './scene/createHeartStarfield.js';
 import { createSkyStreaks } from './scene/createSkyStreaks.js';
@@ -60,10 +61,15 @@ composer.addPass(dreamPass.pass);
 
 const root = new THREE.Group();
 scene.add(root);
+const spectacleGroup = new THREE.Group();
+root.add(spectacleGroup);
 
 const searchParams = new URLSearchParams(window.location.search);
 const prototypeMode = searchParams.get('mode');
 const debugView = searchParams.get('debug');
+const timelineParam = Number.parseFloat(searchParams.get('t') ?? '');
+const freezeTimeline =
+  searchParams.get('freeze') === '1' || searchParams.get('freeze') === 'true';
 const isSolidHeartMode = prototypeMode === 'solid-heart';
 const isPrototypeMode = isSolidHeartMode;
 const isShapeDebugMode = isPrototypeMode && debugView === 'shape';
@@ -83,6 +89,7 @@ const energyBase = showFullScene ? createEnergyBase() : null;
 const flowRibbons = showFullScene ? createFlowRibbons() : null;
 const fractureVeil = showFullScene ? createFractureVeil() : null;
 const storyHalo = showFullScene ? createStoryHalo() : null;
+const glyphFireworks = showFullScene ? createGlyphFireworks() : null;
 const solidHeart = isSolidHeartMode ? createSolidHeart() : null;
 
 if (skyStreaks) {
@@ -91,6 +98,10 @@ if (skyStreaks) {
 
 if (starBackdrop) {
   scene.add(starBackdrop.group);
+}
+
+if (glyphFireworks) {
+  scene.add(glyphFireworks.group);
 }
 
 if (backdrop) {
@@ -102,12 +113,12 @@ if (isPrototypeMode) {
     root.add(solidHeart.group);
   }
 } else {
-  root.add(storyHalo.group);
-  root.add(heartField.group);
-  root.add(heartStarfield.group);
-  root.add(energyBase.group);
-  root.add(flowRibbons.group);
-  root.add(fractureVeil.group);
+  spectacleGroup.add(storyHalo.group);
+  spectacleGroup.add(heartField.group);
+  spectacleGroup.add(heartStarfield.group);
+  spectacleGroup.add(energyBase.group);
+  spectacleGroup.add(flowRibbons.group);
+  spectacleGroup.add(fractureVeil.group);
 }
 
 const ambientLight = new THREE.AmbientLight(0x8fa4ff, 0.3);
@@ -161,6 +172,9 @@ function onResize() {
   if (heartStarfield) {
     heartStarfield.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   }
+  if (glyphFireworks) {
+    glyphFireworks.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  }
   if (energyBase) {
     energyBase.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   }
@@ -173,10 +187,12 @@ function onResize() {
 window.addEventListener('resize', onResize);
 
 const startTime = performance.now();
-const timelineOffset = isPrototypeMode ? 0 : 4.6;
+const timelineOffset = Number.isFinite(timelineParam) ? timelineParam : isPrototypeMode ? 0 : 4.6;
 
 function animate(now) {
-  const elapsed = timelineOffset + (now - startTime) / 1000;
+  const elapsed = freezeTimeline
+    ? timelineOffset
+    : timelineOffset + (now - startTime) / 1000;
   const state = computeSceneState(elapsed);
 
   if (isPrototypeMode) {
@@ -212,31 +228,50 @@ function animate(now) {
     }
   } else {
     const loopDrift = THREE.MathUtils.clamp(
-      (1 - state.birth) * (1 - state.yearning * 0.72) * (1 - state.repair * 0.82),
+      (1 - state.rebirth) * (1 - state.yearning * 0.72) * (1 - state.repair * 0.82),
       0,
       1
     );
+    const skyFocus = state.skyFocus;
+    const spectacleHidden = state.spectacleFade > 0.96;
 
-    scene.fog.density = 0.062 + state.veil * 0.014 + state.yearning * 0.006 - state.afterglow * 0.012;
+    scene.fog.density =
+      0.062 +
+      state.veil * 0.014 +
+      state.yearning * 0.006 -
+      state.afterglow * 0.012 -
+      state.fireworksPresence * 0.018 -
+      state.glyphHold * 0.012;
     renderer.toneMappingExposure =
       0.96 +
       state.invocation * 0.04 +
       state.yearning * 0.06 +
       state.fracture * 0.1 +
-      state.afterglow * 0.015 -
+      state.afterglow * 0.015 +
+      state.fireworksBurst * 0.03 -
+      state.glyphReveal * 0.02 -
+      state.glyphHold * 0.07 -
       loopDrift * 0.04;
     bloomPass.strength =
       0.98 +
       state.yearning * 0.22 +
       state.fracture * 0.18 +
       state.reunion * 0.015 +
+      state.fireworksBurst * 0.02 -
+      state.glyphReveal * 0.16 -
+      state.glyphHold * 0.22 +
       state.afterglow * 0.018 -
       loopDrift * 0.065;
-    bloomPass.radius = 0.78 + state.veil * 0.06 - state.afterglow * 0.01;
-    bloomPass.threshold = 0.18 + state.veil * 0.02 - state.afterglow * 0.004;
+    bloomPass.radius = 0.78 + state.veil * 0.06 + state.fireworksPresence * 0.014 - state.afterglow * 0.01 - state.glyphHold * 0.12;
+    bloomPass.threshold = 0.18 + state.veil * 0.02 - state.afterglow * 0.004 + state.glyphReveal * 0.08 + state.glyphHold * 0.12;
 
     ambientLight.intensity =
-      0.28 + state.serenity * 0.12 + state.yearning * 0.16 + state.afterglow * 0.015 - state.veil * 0.04;
+      0.28 +
+      state.serenity * 0.12 +
+      state.yearning * 0.16 +
+      state.afterglow * 0.015 +
+      state.fireworksPresence * 0.08 -
+      state.veil * 0.04;
 
     const stableOrbit =
       0.016 +
@@ -248,24 +283,33 @@ function animate(now) {
       Math.sin(elapsed * 0.16 + state.yearning * 0.45) * stableOrbit +
       state.fracture * 0.22 +
       state.pursuit * 0.06 -
-      state.repair * 0.05;
+      state.repair * 0.05 -
+      skyFocus * 0.08;
     root.rotation.x =
       Math.cos(elapsed * 0.1) * 0.008 -
       state.veil * 0.02 -
       state.fracture * 0.038 +
-      state.afterglow * 0.014;
+      state.afterglow * 0.014 -
+      skyFocus * 0.03;
     root.position.y =
       state.invocation * 0.04 +
       state.yearning * 0.03 -
       state.fracture * 0.04 +
       state.reunion * 0.06 +
       state.afterglow * 0.04 -
-      loopDrift * 0.08;
+      loopDrift * 0.08 -
+      state.spectacleFade * 0.34;
+    spectacleGroup.position.y = -state.spectacleFade * 0.38;
+    spectacleGroup.position.z = -state.spectacleFade * 0.24;
+    spectacleGroup.visible = !spectacleHidden;
 
     camera.position.x =
-      Math.sin(elapsed * 0.11 + state.yearning * 0.2) * (0.04 + state.yearning * 0.08) +
-      state.fracture * 0.2 -
-      state.reunion * 0.04;
+      (
+        Math.sin(elapsed * 0.11 + state.yearning * 0.2) * (0.04 + state.yearning * 0.08) +
+        state.fracture * 0.2 -
+        state.reunion * 0.04
+      ) *
+      (1 - skyFocus * 0.88);
     camera.position.y =
       0.04 +
       state.invocation * 0.08 +
@@ -273,7 +317,9 @@ function animate(now) {
       Math.cos(elapsed * 0.15) * 0.03 +
       state.fracture * 0.12 +
       state.afterglow * 0.05 -
-      loopDrift * 0.04;
+      loopDrift * 0.04 +
+      skyFocus * 0.24 +
+      state.glyphHold * 0.04;
     camera.position.z =
       7.28 -
       state.invocation * 0.18 -
@@ -281,10 +327,17 @@ function animate(now) {
       state.fracture * 0.2 -
       state.pursuit * 0.18 +
       state.afterglow * 0.08 +
-      loopDrift * 0.16;
+      loopDrift * 0.16 +
+      skyFocus * 0.22;
     camera.lookAt(
       Math.sin(elapsed * 0.08) * 0.01 - state.fracture * 0.03,
-      0.1 + state.yearning * 0.08 + state.fracture * 0.16 + state.reunion * 0.12 - loopDrift * 0.05,
+      0.1 +
+        state.yearning * 0.08 +
+        state.fracture * 0.16 +
+        state.reunion * 0.12 +
+        skyFocus * 0.24 +
+        state.glyphHold * 0.03 -
+        loopDrift * 0.05,
       0
     );
 
@@ -305,6 +358,7 @@ function animate(now) {
       state.heartPresence * 1.1 +
       state.yearning * 1.3 +
       state.fracture * 2.0 +
+      state.fireworksPresence * 0.42 +
       state.afterglow * 0.14 +
       state.reunion * 0.03 -
       loopDrift * 0.34;
@@ -324,7 +378,11 @@ function animate(now) {
     storyLight.position.x = Math.sin(elapsed * 0.18) * 0.24;
     storyLight.position.y = -0.92 + state.gravity * 0.18 + state.afterglow * 0.24;
     storyLight.position.z = 2.8 - state.yearning * 0.12;
-    storyLight.intensity = state.yearning * 1.78 + state.reunion * 0.04 + state.afterglow * 0.06;
+    storyLight.intensity =
+      state.yearning * 1.78 +
+      state.reunion * 0.04 +
+      state.afterglow * 0.06 +
+      state.fireworksPresence * 0.1;
 
     vowLight.position.x = -1.4 + state.afterglow * 0.4;
     vowLight.position.y = 1.2 + state.reunion * 0.36 + state.afterglow * 0.28;
@@ -336,6 +394,9 @@ function animate(now) {
       state.veil * 0.01 -
       state.fracture * 0.022 -
       state.afterglow * 0.003 -
+      state.fireworksBurst * 0.012 -
+      state.glyphReveal * 0.04 -
+      state.glyphHold * 0.08 -
       state.reunion * 0.001 -
       loopDrift * 0.054 -
       state.release * 0.02;
@@ -355,6 +416,14 @@ function animate(now) {
     energyBase.update(state);
     flowRibbons.update(state);
     fractureVeil.update(state);
+    if (glyphFireworks) {
+      glyphFireworks.group.visible =
+        state.fireworksPresence > 0.01 ||
+        state.glyphRain > 0.01 ||
+        state.glyphReveal > 0.01 ||
+        state.glyphFade > 0.01;
+      glyphFireworks.update(state);
+    }
   }
 
   if (isPrototypeMode && !isShapeDebugMode) {
@@ -367,6 +436,10 @@ function animate(now) {
     if (starBackdrop) {
       starBackdrop.update(state);
     }
+  }
+
+  if (!isPrototypeMode && glyphFireworks && !glyphFireworks.group.visible) {
+    glyphFireworks.update(state);
   }
 
   dreamPass.update(state);

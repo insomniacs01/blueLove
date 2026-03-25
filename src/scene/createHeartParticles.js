@@ -604,7 +604,7 @@ export function createHeartParticles() {
     },
     update(state) {
       material.uniforms.uTime.value = state.elapsed;
-      material.uniforms.uAssemble.value = state.birth;
+      material.uniforms.uAssemble.value = state.rebirth;
       material.uniforms.uFracture.value = state.fracture;
       material.uniforms.uReturn.value = state.repair;
       material.uniforms.uChaos.value = state.swirl;
