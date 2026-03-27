@@ -1,10 +1,9 @@
 import * as THREE from 'three';
-
-const GLYPH_CHAR = '\u8881';
-const GLYPH_MASK_FONT =
-  '700 358px "Songti SC", "STSong", "Kaiti SC", "STKaiti", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", serif';
-const GLYPH_GUIDE_FONT =
-  '600 344px "Songti SC", "STSong", "Kaiti SC", "STKaiti", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", serif';
+import { DEFAULT_STORY_NAME } from '../storyConfig.js';
+const CJK_FONT_FAMILY =
+  '"Songti SC", "STSong", "Kaiti SC", "STKaiti", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", serif';
+const LATIN_FONT_FAMILY =
+  '"Iowan Old Style", "Baskerville", "Palatino Linotype", "Times New Roman", serif';
 
 const burstVertexShader = `
   attribute vec3 origin;
@@ -185,6 +184,49 @@ const glyphFragmentShader = `
   }
 `;
 
+function normalizeName(name) {
+  return (name ?? '').trim().replace(/\s+/g, ' ').slice(0, 16) || DEFAULT_STORY_NAME;
+}
+
+function containsCjk(text) {
+  return /[\u3400-\u9fff\uf900-\ufaff]/u.test(text);
+}
+
+function getFontFamily(text) {
+  return containsCjk(text) ? CJK_FONT_FAMILY : `${LATIN_FONT_FAMILY}, ${CJK_FONT_FAMILY}`;
+}
+
+function fitText(context, text, options) {
+  const {
+    weight,
+    baseSize,
+    minSize,
+    maxWidth,
+    maxHeight
+  } = options;
+  const family = getFontFamily(text);
+  let fontSize = baseSize;
+  let metrics = null;
+
+  while (fontSize > minSize) {
+    context.font = `${weight} ${fontSize}px ${family}`;
+    metrics = context.measureText(text);
+    const textHeight = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
+    if (metrics.width <= maxWidth && textHeight <= maxHeight) {
+      break;
+    }
+    fontSize -= 12;
+  }
+
+  context.font = `${weight} ${fontSize}px ${family}`;
+  metrics = context.measureText(text);
+
+  return {
+    font: context.font,
+    metrics
+  };
+}
+
 function createRadialTexture(stops) {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
@@ -205,111 +247,37 @@ function createRadialTexture(stops) {
   return texture;
 }
 
-function paintGlyph(context, glyphConfig) {
-  const {
-    canvas,
-    font,
-    fillStyle,
-    strokeStyle = null,
-    lineWidth = 0,
-    shadowColor = 'transparent',
-    shadowBlur = 0,
-    centerY = canvas.height * 0.53
-  } = glyphConfig;
-
-  context.save();
-  context.textAlign = 'center';
-  context.textBaseline = 'middle';
-  context.font = font;
-  context.lineJoin = 'round';
-  context.lineCap = 'round';
-  context.shadowColor = shadowColor;
-  context.shadowBlur = shadowBlur;
-  context.fillStyle = fillStyle;
-  context.fillText(GLYPH_CHAR, canvas.width * 0.5, centerY);
-
-  if (strokeStyle && lineWidth > 0) {
-    context.shadowBlur = shadowBlur * 0.5;
-    context.lineWidth = lineWidth;
-    context.strokeStyle = strokeStyle;
-    context.strokeText(GLYPH_CHAR, canvas.width * 0.5, centerY);
-  }
-
-  context.restore();
-}
-
-function drawGlyphMaskCanvas() {
+function drawTextMaskCanvas(text) {
   const canvas = document.createElement('canvas');
-  canvas.width = 768;
+  canvas.width = 1600;
   canvas.height = 768;
 
   const context = canvas.getContext('2d');
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  paintGlyph(context, {
-    canvas,
-    font: GLYPH_MASK_FONT,
-    fillStyle: '#ffffff',
-    strokeStyle: 'rgba(255,255,255,0.96)',
-    lineWidth: 14,
-    centerY: canvas.height * 0.535
+  const layout = fitText(context, text, {
+    weight: containsCjk(text) ? 700 : 800,
+    baseSize: containsCjk(text) ? 384 : 332,
+    minSize: 128,
+    maxWidth: canvas.width * (containsCjk(text) ? 0.82 : 0.88),
+    maxHeight: canvas.height * (containsCjk(text) ? 0.56 : 0.42)
   });
+
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.font = layout.font;
+  context.lineJoin = 'round';
+  context.lineCap = 'round';
+  context.fillStyle = '#ffffff';
+  context.strokeStyle = 'rgba(255,255,255,0.96)';
+  context.lineWidth = containsCjk(text) ? 14 : 10;
+  context.strokeText(text, canvas.width * 0.5, canvas.height * 0.525);
+  context.fillText(text, canvas.width * 0.5, canvas.height * 0.525);
 
   return canvas;
 }
 
-function drawGlyphGuideCanvas() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 1024;
-  canvas.height = 1024;
-
-  const context = canvas.getContext('2d');
-  const pearlGradient = context.createLinearGradient(0, canvas.height * 0.18, 0, canvas.height * 0.84);
-  pearlGradient.addColorStop(0.0, 'rgba(184,232,255,0.72)');
-  pearlGradient.addColorStop(0.38, 'rgba(248,252,255,0.82)');
-  pearlGradient.addColorStop(0.7, 'rgba(255,234,244,0.8)');
-  pearlGradient.addColorStop(1.0, 'rgba(255,184,220,0.68)');
-
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  paintGlyph(context, {
-    canvas,
-    font: GLYPH_GUIDE_FONT,
-    fillStyle: 'rgba(196,232,255,0.24)',
-    shadowColor: 'rgba(118,188,255,0.45)',
-    shadowBlur: 96,
-    centerY: canvas.height * 0.54
-  });
-  paintGlyph(context, {
-    canvas,
-    font: GLYPH_GUIDE_FONT,
-    fillStyle: 'rgba(255,198,226,0.16)',
-    shadowColor: 'rgba(255,176,214,0.34)',
-    shadowBlur: 60,
-    centerY: canvas.height * 0.54
-  });
-  paintGlyph(context, {
-    canvas,
-    font: GLYPH_GUIDE_FONT,
-    fillStyle: pearlGradient,
-    strokeStyle: 'rgba(255,255,255,0.68)',
-    lineWidth: 8,
-    shadowColor: 'rgba(214,240,255,0.5)',
-    shadowBlur: 28,
-    centerY: canvas.height * 0.54
-  });
-  paintGlyph(context, {
-    canvas,
-    font: GLYPH_GUIDE_FONT,
-    fillStyle: 'rgba(255,255,255,0.24)',
-    shadowColor: 'rgba(255,255,255,0.22)',
-    shadowBlur: 12,
-    centerY: canvas.height * 0.54
-  });
-
-  return canvas;
-}
-
-function extractGlyphPoints() {
-  const canvas = drawGlyphMaskCanvas();
+function extractTextPoints(text) {
+  const canvas = drawTextMaskCanvas(text);
   const context = canvas.getContext('2d');
   const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
   let minX = width;
@@ -332,10 +300,12 @@ function extractGlyphPoints() {
   }
 
   const points = [];
-  const sampleStep = 4;
+  const sampleStep = containsCjk(text) ? 4 : 5;
   const boundWidth = Math.max(1, maxX - minX);
   const boundHeight = Math.max(1, maxY - minY);
-  const maxDimension = Math.max(boundWidth, boundHeight);
+  const fitWidth = containsCjk(text) ? 5.6 : 6.2;
+  const fitHeight = containsCjk(text) ? 2.54 : 2.12;
+  const scale = Math.min(fitWidth / boundWidth, fitHeight / boundHeight);
 
   for (let y = minY; y <= maxY; y += sampleStep) {
     for (let x = minX; x <= maxX; x += sampleStep) {
@@ -363,21 +333,21 @@ function extractGlyphPoints() {
       const keepProbability =
         edgeFactor > 0
           ? THREE.MathUtils.lerp(0.82, 1.0, edgeFactor)
-          : THREE.MathUtils.lerp(0.04, 0.16, alpha / 255);
+          : THREE.MathUtils.lerp(0.06, 0.2, alpha / 255);
 
       if (Math.random() > keepProbability) {
         continue;
       }
 
-      const normalizedX = (x - (minX + maxX) * 0.5) / maxDimension;
-      const normalizedY = (((minY + maxY) * 0.5) - y) / maxDimension;
+      const centeredX = (x - (minX + maxX) * 0.5) * scale;
+      const centeredY = (((minY + maxY) * 0.5) - y) * scale;
       const widthFactor = (x - minX) / boundWidth;
       const heightFactor = 1 - (y - minY) / boundHeight;
 
       points.push({
         target: new THREE.Vector3(
-          normalizedX * 4.32,
-          normalizedY * 4.36,
+          centeredX,
+          centeredY,
           THREE.MathUtils.randFloatSpread(edgeFactor > 0 ? 0.04 : 0.1)
         ),
         widthFactor,
@@ -388,20 +358,30 @@ function extractGlyphPoints() {
     }
   }
 
-  while (points.length > 2600) {
+  const maxPointCount = 2400 + Math.min(1200, text.length * 220);
+  while (points.length > maxPointCount) {
     points.splice(Math.floor(Math.random() * points.length), 1);
   }
 
-  return points;
+  return {
+    points,
+    width: boundWidth * scale,
+    height: boundHeight * scale
+  };
 }
 
-function createBurstLayer() {
-  const burstCenters = [
-    new THREE.Vector3(-2.2, 1.76, -0.18),
-    new THREE.Vector3(-0.54, 2.38, 0.08),
-    new THREE.Vector3(0.94, 2.02, -0.06),
-    new THREE.Vector3(2.32, 2.58, 0.14)
+function createBurstCenters(layout) {
+  const halfWidth = Math.max(1.75, layout.width * 0.52);
+  return [
+    new THREE.Vector3(-halfWidth * 0.96, 1.76, -0.18),
+    new THREE.Vector3(-halfWidth * 0.28, 2.38, 0.08),
+    new THREE.Vector3(halfWidth * 0.24, 2.02, -0.06),
+    new THREE.Vector3(halfWidth * 0.96, 2.58, 0.14)
   ];
+}
+
+function createBurstLayer(layout) {
+  const burstCenters = createBurstCenters(layout);
   const countPerBurst = 220;
   const count = burstCenters.length * countPerBurst;
   const geometry = new THREE.BufferGeometry();
@@ -428,7 +408,7 @@ function createBurstLayer() {
       ).normalize();
       const baseIndex = particleIndex * 3;
       const shellOrigin = new THREE.Vector3(
-        burstCenter.x * 0.12 + THREE.MathUtils.randFloatSpread(0.18),
+        burstCenter.x * 0.14 + THREE.MathUtils.randFloatSpread(0.22),
         burstCenter.y - 0.96 + Math.random() * 0.18,
         burstCenter.z * 0.2 + THREE.MathUtils.randFloatSpread(0.22)
       );
@@ -490,10 +470,10 @@ function createBurstLayer() {
   return { points, material };
 }
 
-function createGlyphLayer(glyphPoints, layer) {
+function createNameLayer(namePoints, layout, layer) {
   const pointsSource =
     layer === 0
-      ? glyphPoints.filter(
+      ? namePoints.filter(
           (point) =>
             point.edgeFactor > 0.08 ||
             point.brightness > 0.72 ||
@@ -501,7 +481,7 @@ function createGlyphLayer(glyphPoints, layer) {
               THREE.MathUtils.lerp(0.02, 0.18, point.brightness) *
                 THREE.MathUtils.lerp(0.45, 1.0, point.edgeFactor + 0.1)
         )
-      : glyphPoints;
+      : namePoints;
   const count = pointsSource.length;
   const geometry = new THREE.BufferGeometry();
   const position = new Float32Array(count * 3);
@@ -513,15 +493,13 @@ function createGlyphLayer(glyphPoints, layer) {
   const tone = new Float32Array(count);
   const delay = new Float32Array(count);
   const flare = new Float32Array(count);
-  const burstCenters = [
-    new THREE.Vector3(-2.4, 1.2, -0.18),
-    new THREE.Vector3(-0.72, 2.08, 0.12),
-    new THREE.Vector3(0.84, 1.72, -0.1),
-    new THREE.Vector3(2.48, 2.24, 0.1)
-  ];
+  const burstCenters = createBurstCenters(layout);
 
   pointsSource.forEach((point, index) => {
-    const burstIndex = point.target.x < -0.8 ? 0 : point.target.x < 0.2 ? 1 : point.target.x < 1.4 ? 2 : 3;
+    const burstIndex = Math.min(
+      burstCenters.length - 1,
+      Math.floor(point.widthFactor * burstCenters.length)
+    );
     const sourceAnchor = burstCenters[burstIndex].clone();
     const baseIndex = index * 3;
     const fallDrift = new THREE.Vector3(
@@ -598,12 +576,17 @@ function createGlyphLayer(glyphPoints, layer) {
   return { points, material };
 }
 
-export function createGlyphFireworks() {
+export function createNameFireworks(options = {}) {
+  const name = normalizeName(options.name);
   const group = new THREE.Group();
-  const burstLayer = createBurstLayer();
-  const glyphPoints = extractGlyphPoints();
-  const glyphCore = createGlyphLayer(glyphPoints, 0);
-  const glyphVeil = createGlyphLayer(glyphPoints, 1);
+  const layout = extractTextPoints(name);
+  const burstLayer = createBurstLayer(layout);
+  const nameCore = createNameLayer(layout.points, layout, 0);
+  const nameVeil = createNameLayer(layout.points, layout, 1);
+  const baseHaloWidth = 3.8 + layout.width * 1.06;
+  const baseHaloHeight = 2.8 + layout.height * 1.4;
+  const blushWidth = 3.1 + layout.width * 0.96;
+  const blushHeight = 2.3 + layout.height * 1.12;
 
   const rainHalo = new THREE.Sprite(
     new THREE.SpriteMaterial({
@@ -619,8 +602,8 @@ export function createGlyphFireworks() {
       blending: THREE.AdditiveBlending
     })
   );
-  rainHalo.position.set(0.02, 0.12, -1.45);
-  rainHalo.scale.set(6.4, 4.6, 1);
+  rainHalo.position.set(0.02, 0.1, -1.45);
+  rainHalo.scale.set(baseHaloWidth, baseHaloHeight, 1);
 
   const blushHalo = new THREE.Sprite(
     new THREE.SpriteMaterial({
@@ -636,24 +619,23 @@ export function createGlyphFireworks() {
       blending: THREE.AdditiveBlending
     })
   );
-  blushHalo.position.set(-0.12, -0.14, -1.22);
-  blushHalo.scale.set(5.4, 3.8, 1);
+  blushHalo.position.set(-0.12, -0.12, -1.22);
+  blushHalo.scale.set(blushWidth, blushHeight, 1);
 
   group.add(rainHalo);
   group.add(blushHalo);
-  group.add(glyphVeil.points);
+  group.add(nameVeil.points);
   group.add(burstLayer.points);
-  group.add(glyphCore.points);
+  group.add(nameCore.points);
 
   group.position.set(0, 1.42, -0.55);
-  group.scale.setScalar(1);
 
   return {
     group,
     setPixelRatio(pixelRatio) {
       burstLayer.material.uniforms.uPixelRatio.value = pixelRatio;
-      glyphCore.material.uniforms.uPixelRatio.value = pixelRatio;
-      glyphVeil.material.uniforms.uPixelRatio.value = pixelRatio;
+      nameCore.material.uniforms.uPixelRatio.value = pixelRatio;
+      nameVeil.material.uniforms.uPixelRatio.value = pixelRatio;
     },
     update(state) {
       burstLayer.material.uniforms.uTime.value = state.elapsed;
@@ -661,27 +643,35 @@ export function createGlyphFireworks() {
       burstLayer.material.uniforms.uBurst.value = state.fireworksBurst;
       burstLayer.material.uniforms.uFade.value = state.glyphFade;
 
-      glyphCore.material.uniforms.uTime.value = state.elapsed;
-      glyphCore.material.uniforms.uRain.value = state.glyphRain;
-      glyphCore.material.uniforms.uReveal.value = state.glyphReveal;
-      glyphCore.material.uniforms.uHold.value = state.glyphHold;
-      glyphCore.material.uniforms.uFade.value = state.glyphFade;
+      nameCore.material.uniforms.uTime.value = state.elapsed;
+      nameCore.material.uniforms.uRain.value = state.glyphRain;
+      nameCore.material.uniforms.uReveal.value = state.glyphReveal;
+      nameCore.material.uniforms.uHold.value = state.glyphHold;
+      nameCore.material.uniforms.uFade.value = state.glyphFade;
 
-      glyphVeil.material.uniforms.uTime.value = state.elapsed;
-      glyphVeil.material.uniforms.uRain.value = state.glyphRain;
-      glyphVeil.material.uniforms.uReveal.value = state.glyphReveal;
-      glyphVeil.material.uniforms.uHold.value = state.glyphHold;
-      glyphVeil.material.uniforms.uFade.value = state.glyphFade;
+      nameVeil.material.uniforms.uTime.value = state.elapsed;
+      nameVeil.material.uniforms.uRain.value = state.glyphRain;
+      nameVeil.material.uniforms.uReveal.value = state.glyphReveal;
+      nameVeil.material.uniforms.uHold.value = state.glyphHold;
+      nameVeil.material.uniforms.uFade.value = state.glyphFade;
       burstLayer.points.visible = state.fireworksBurst > state.glyphReveal * 0.42;
 
       const holdGlow = state.glyphHold * 0.22 + state.glyphReveal * 0.12;
       rainHalo.material.opacity =
         state.glyphReveal * 0.05 + state.glyphHold * 0.04 - state.glyphFade * 0.05;
-      rainHalo.scale.set(6.4 + holdGlow * 7.4, 4.6 + holdGlow * 5.1, 1);
+      rainHalo.scale.set(
+        baseHaloWidth + holdGlow * (4.2 + layout.width * 0.6),
+        baseHaloHeight + holdGlow * (3.6 + layout.height * 0.9),
+        1
+      );
 
       blushHalo.material.opacity =
         state.fireworksBurst * 0.03 + state.glyphHold * 0.034 - state.glyphFade * 0.05;
-      blushHalo.scale.set(5.4 + holdGlow * 5.2, 3.8 + holdGlow * 3.8, 1);
+      blushHalo.scale.set(
+        blushWidth + holdGlow * (3.6 + layout.width * 0.4),
+        blushHeight + holdGlow * (2.8 + layout.height * 0.6),
+        1
+      );
 
       group.position.y = 1.42 + state.fireworksPresence * 0.08 + state.glyphHold * 0.05;
       group.rotation.z = Math.sin(state.elapsed * 0.12) * 0.01 - state.glyphFade * 0.02;

@@ -11,14 +11,15 @@ import { createBackdrop } from './scene/createBackdrop.js';
 import { createEnergyBase } from './scene/createEnergyBase.js';
 import { createFractureVeil } from './scene/createFractureVeil.js';
 import { createFlowRibbons } from './scene/createFlowRibbons.js';
-import { createGlyphFireworks } from './scene/createGlyphFireworks.js';
 import { createHeartParticles } from './scene/createHeartParticles.js';
 import { createHeartStarfield } from './scene/createHeartStarfield.js';
+import { createNameFireworks } from './scene/createNameFireworks.js';
 import { createSkyStreaks } from './scene/createSkyStreaks.js';
 import { createStarBackdrop } from './scene/createStarBackdrop.js';
 import { createStoryHalo } from './scene/createStoryHalo.js';
 import { createSolidHeart } from './scene/createSolidHeart.js';
 import { computeSceneState } from './scene/sceneState.js';
+import { DEFAULT_STORY_NAME, resolveStoryName } from './storyConfig.js';
 
 const app = document.querySelector('#app');
 
@@ -70,6 +71,8 @@ const debugView = searchParams.get('debug');
 const timelineParam = Number.parseFloat(searchParams.get('t') ?? '');
 const freezeTimeline =
   searchParams.get('freeze') === '1' || searchParams.get('freeze') === 'true';
+// Edit DEFAULT_STORY_NAME in src/storyConfig.js, or override with ?name=...
+const storyName = resolveStoryName(searchParams.get('name') ?? DEFAULT_STORY_NAME);
 const isSolidHeartMode = prototypeMode === 'solid-heart';
 const isPrototypeMode = isSolidHeartMode;
 const isShapeDebugMode = isPrototypeMode && debugView === 'shape';
@@ -89,7 +92,7 @@ const energyBase = showFullScene ? createEnergyBase() : null;
 const flowRibbons = showFullScene ? createFlowRibbons() : null;
 const fractureVeil = showFullScene ? createFractureVeil() : null;
 const storyHalo = showFullScene ? createStoryHalo() : null;
-const glyphFireworks = showFullScene ? createGlyphFireworks() : null;
+const nameFireworks = showFullScene ? createNameFireworks({ name: storyName }) : null;
 const solidHeart = isSolidHeartMode ? createSolidHeart() : null;
 
 if (skyStreaks) {
@@ -100,8 +103,8 @@ if (starBackdrop) {
   scene.add(starBackdrop.group);
 }
 
-if (glyphFireworks) {
-  scene.add(glyphFireworks.group);
+if (nameFireworks) {
+  scene.add(nameFireworks.group);
 }
 
 if (backdrop) {
@@ -172,8 +175,8 @@ function onResize() {
   if (heartStarfield) {
     heartStarfield.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   }
-  if (glyphFireworks) {
-    glyphFireworks.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  if (nameFireworks) {
+    nameFireworks.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   }
   if (energyBase) {
     energyBase.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -187,7 +190,7 @@ function onResize() {
 window.addEventListener('resize', onResize);
 
 const startTime = performance.now();
-const timelineOffset = Number.isFinite(timelineParam) ? timelineParam : isPrototypeMode ? 0 : 4.6;
+const timelineOffset = Number.isFinite(timelineParam) ? timelineParam : 0;
 
 function animate(now) {
   const elapsed = freezeTimeline
@@ -270,8 +273,8 @@ function animate(now) {
       state.serenity * 0.12 +
       state.yearning * 0.16 +
       state.afterglow * 0.015 +
-      state.fireworksPresence * 0.08 -
-      state.veil * 0.04;
+      state.fireworksPresence * 0.08 +
+      -state.veil * 0.04;
 
     const stableOrbit =
       0.016 +
@@ -416,13 +419,13 @@ function animate(now) {
     energyBase.update(state);
     flowRibbons.update(state);
     fractureVeil.update(state);
-    if (glyphFireworks) {
-      glyphFireworks.group.visible =
+    if (nameFireworks) {
+      nameFireworks.group.visible =
         state.fireworksPresence > 0.01 ||
         state.glyphRain > 0.01 ||
         state.glyphReveal > 0.01 ||
         state.glyphFade > 0.01;
-      glyphFireworks.update(state);
+      nameFireworks.update(state);
     }
   }
 
@@ -438,8 +441,8 @@ function animate(now) {
     }
   }
 
-  if (!isPrototypeMode && glyphFireworks && !glyphFireworks.group.visible) {
-    glyphFireworks.update(state);
+  if (!isPrototypeMode && nameFireworks && !nameFireworks.group.visible) {
+    nameFireworks.update(state);
   }
 
   dreamPass.update(state);
